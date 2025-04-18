@@ -15,8 +15,8 @@ public class PlayerController : MonoBehaviour
 
     private Rigidbody rb; //reference to the player's rigidbody
     private PlayerInputActions inputActions; //auto-generated input actions class
-    private Vector2 moveInput; //stores movement input (forward/backward)
-    private float turnInput; //stores turn input (left/right)
+    private Vector2 moveInput; //stores movement input (stick/dpad/wasd)
+    private float turnInput; //stores turn input (stick x/dpad/a/d)
     private bool isSprinting; //true if sprint input is held
 
     void Awake()
@@ -26,11 +26,11 @@ public class PlayerController : MonoBehaviour
 
         inputActions = new PlayerInputActions(); //initialize input actions
 
-        //read movement input (stick or wasd)
+        //read movement input (stick or wasd/dpad)
         inputActions.Player.Move.performed += ctx => moveInput = ctx.ReadValue<Vector2>();
         inputActions.Player.Move.canceled += _ => moveInput = Vector2.zero;
 
-        //read turn input (leftstick/dpad/keyboard
+        //read turn input (leftstick/dpad/keyboard)
         inputActions.Player.Turn.performed += ctx => turnInput = ctx.ReadValue<float>();
         inputActions.Player.Turn.canceled += _ => turnInput = 0f;
 
@@ -44,22 +44,40 @@ public class PlayerController : MonoBehaviour
 
     void FixedUpdate()
     {
-        //choose current move and turn speeds
-        float speed = isSprinting ? sprintSpeed : walkSpeed;
-        float currentRotationSpeed = moveInput.y == 0
+        //only allow sprint if input is mostly forward
+        float vertical = isSprinting && !IsMostlyForward(moveInput) ? 0f : moveInput.y;
+
+        //choose current speed
+        float speed = isSprinting && vertical > 0 ? sprintSpeed : walkSpeed;
+
+        //choose current rotation speed
+        float currentRotationSpeed = vertical == 0
             ? idleRotationSpeed
             : (isSprinting ? sprintRotationSpeed : rotationSpeed);
 
-        //apply rotation first so direction updates instantly
-     if (Mathf.Abs(turnInput) > 0.1f)
+        //apply turning
+        if (Mathf.Abs(turnInput) > 0.1f)
         {
-            Quaternion turn = Quaternion.Euler(0f, turnInput * currentRotationSpeed * Time.fixedDeltaTime, 0f);
+            float turnAmount = turnInput * currentRotationSpeed * Time.fixedDeltaTime;
+            Quaternion turn = Quaternion.Euler(0f, turnAmount, 0f);
             rb.MoveRotation(rb.rotation * turn);
         }
 
-            //use the updated rotation to calculate consistent forward movement
-            Vector3 moveDirection = transform.forward * moveInput.y;
-            Vector3 movement = moveDirection.normalized * speed * Time.fixedDeltaTime;
-            rb.MovePosition(rb.position + movement);
+        //calculate movement direction
+        Vector3 moveDirection = transform.forward * vertical;
+        Vector3 movement = moveDirection.normalized * speed;
+
+        //apply movement while preserving y velocity
+        rb.linearVelocity = new Vector3(movement.x, rb.linearVelocity.y, movement.z);
+
+        //stop horizontal movement if not pressing forward/back
+        if (Mathf.Abs(vertical) < 0.1f)
+            rb.linearVelocity = new Vector3(0f, rb.linearVelocity.y, 0f);
+    }
+
+    //returns true if stick is mostly pointing forward (within 60 degrees of up)
+    bool IsMostlyForward(Vector2 input)
+    {
+        return input.magnitude > 0.1f && Vector2.Angle(Vector2.up, input.normalized) < 60f;
     }
 }
