@@ -1,63 +1,65 @@
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 [RequireComponent(typeof(Rigidbody))]
 public class PlayerController : MonoBehaviour
 {
     [Header("Movement Settings")]
-    public float walkSpeed = 3f;           // Normal walk speed
-    public float sprintSpeed = 6f;         // Sprinting speed
+    public float walkSpeed = 3f; //normal walking speed
+    public float sprintSpeed = 6f; //speed when sprinting
 
     [Header("Rotation Settings")]
-    public float rotationSpeed = 60f;          // Rotation speed while walking
-    public float sprintRotationSpeed = 40f;    // Slower rotation while sprinting
-    public float idleRotationSpeed = 80f;      // Faster rotation when standing still
+    public float rotationSpeed = 60f; //turn speed while walking
+    public float sprintRotationSpeed = 40f; //turn speed while sprinting
+    public float idleRotationSpeed = 80f; //turn speed while standing still
 
-    private Rigidbody rb;
-    private float moveInput;
-    private float turnInput;
-    private bool isSprinting;
+    private Rigidbody rb; //reference to the player's rigidbody
+    private PlayerInputActions inputActions; //auto-generated input actions class
+    private Vector2 moveInput; //stores movement input (forward/backward)
+    private float turnInput; //stores turn input (left/right)
+    private bool isSprinting; //true if sprint input is held
 
-    void Start()
+    void Awake()
     {
         rb = GetComponent<Rigidbody>();
-        rb.freezeRotation = true; // We'll handle rotation manually
+        rb.freezeRotation = true; //prevents unwanted physics rotation
+
+        inputActions = new PlayerInputActions(); //initialize input actions
+
+        //read movement input (stick or wasd)
+        inputActions.Player.Move.performed += ctx => moveInput = ctx.ReadValue<Vector2>();
+        inputActions.Player.Move.canceled += _ => moveInput = Vector2.zero;
+
+        //read turn input (leftstick/dpad/keyboard
+        inputActions.Player.Turn.performed += ctx => turnInput = ctx.ReadValue<float>();
+        inputActions.Player.Turn.canceled += _ => turnInput = 0f;
+
+        //read sprint input (shift/l1/lb)
+        inputActions.Player.Sprint.performed += _ => isSprinting = true;
+        inputActions.Player.Sprint.canceled += _ => isSprinting = false;
     }
 
-    void Update()
-    {
-        // Forward/backward input (W/S or Up/Down)
-        moveInput = Input.GetAxisRaw("Vertical");
-
-        // Left/right input: calculate turn direction (-1, 0, 1)
-        turnInput = (Input.GetKey(KeyCode.D) || Input.GetKey(KeyCode.RightArrow) ? 1f : 0f)
-                  - (Input.GetKey(KeyCode.A) || Input.GetKey(KeyCode.LeftArrow) ? 1f : 0f);
-
-        // Check if sprinting
-        isSprinting = Input.GetKey(KeyCode.LeftShift);
-    }
+    void OnEnable() => inputActions.Enable(); //enable input actions when object is active
+    void OnDisable() => inputActions.Disable(); //disable input actions when object is inactive
 
     void FixedUpdate()
     {
-        // Choose movement speed based on sprint state
-        float currentSpeed = isSprinting ? sprintSpeed : walkSpeed;
+        //choose current move and turn speeds
+        float speed = isSprinting ? sprintSpeed : walkSpeed;
+        float currentRotationSpeed = moveInput.y == 0
+            ? idleRotationSpeed
+            : (isSprinting ? sprintRotationSpeed : rotationSpeed);
 
-        // Choose rotation speed based on movement/sprint state
-        float currentRotationSpeed = idleRotationSpeed; // default to idle
-        if (Mathf.Abs(moveInput) > 0.01f)
+        //apply rotation first so direction updates instantly
+     if (Mathf.Abs(turnInput) > 0.1f)
         {
-            currentRotationSpeed = isSprinting ? sprintRotationSpeed : rotationSpeed;
+            Quaternion turn = Quaternion.Euler(0f, turnInput * currentRotationSpeed * Time.fixedDeltaTime, 0f);
+            rb.MoveRotation(rb.rotation * turn);
         }
 
-        // Rotate character if turning
-        if (turnInput != 0f)
-        {
-            float turnAmount = turnInput * currentRotationSpeed * Time.fixedDeltaTime;
-            Quaternion turnRotation = Quaternion.Euler(0f, turnAmount, 0f);
-            rb.MoveRotation(rb.rotation * turnRotation);
-        }
-
-        // Move forward/backward
-        Vector3 moveDirection = transform.forward * moveInput * currentSpeed * Time.fixedDeltaTime;
-        rb.MovePosition(rb.position + moveDirection);
+            //use the updated rotation to calculate consistent forward movement
+            Vector3 moveDirection = transform.forward * moveInput.y;
+            Vector3 movement = moveDirection.normalized * speed * Time.fixedDeltaTime;
+            rb.MovePosition(rb.position + movement);
     }
 }
