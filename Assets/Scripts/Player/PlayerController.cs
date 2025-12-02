@@ -1,6 +1,8 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
 
+
+//basic player controller will probably change or tweak
 [RequireComponent(typeof(Rigidbody))]
 public class PlayerController : MonoBehaviour
 {
